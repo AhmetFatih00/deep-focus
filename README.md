@@ -29,4 +29,4 @@ Deep Focus is a gamified, clean, and highly interactive Pomodoro and Task Manage
 
 1. Clone the repository:
    ```bash
-   git clone [https://github.com/AhmetFatih00/deep-focus.git](https://github.com/AhemtFatih00/deep-focus.git)
+   git clone [https://github.com/AhmetFatih00/deep-focus.git](https://github.com/AhmetFatih00/deep-focus.git)
