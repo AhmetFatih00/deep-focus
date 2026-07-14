@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.pomodoro_app"
+    namespace = "com.focusflow.tasks.pomodoro"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -17,14 +17,20 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        jvmTarget = "17"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("../../upload-keystore.jks")
+            storePassword = "ahmetfthshn1"
+            keyAlias = "upload"
+            keyPassword = "ahmetfthshn1"
+        }
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.pomodoro_app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        applicationId = "com.focusflow.tasks.pomodoro"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -32,16 +38,17 @@ android {
     }
 
     buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
+
     dependencies {
-    // 👇 KOTLIN STİLİNDE BÖYLE YAZILIR (Parantez ve çift tırnak var) 👇
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-}
+        coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    }
 }
 
 flutter {

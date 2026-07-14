@@ -28,7 +28,7 @@ class _TimerViewState extends State<TimerView> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     secondsRemaining = initialTime;
-    _loadDefaultDuration();
+    _loadSavedDuration();
     subscription = notificationStream.stream.listen((command) {
       if (command == 'pause_timer') stopTimer(updateNotification: true);
       else if (command == 'resume_timer') startTimer();
@@ -37,8 +37,8 @@ class _TimerViewState extends State<TimerView> with WidgetsBindingObserver {
   }
 
   Tag get activeTag {
-    if (_selectedTag == null || !widget.tags.contains(_selectedTag)) return widget.tags.firstWhere((t) => t.name == "General", orElse: () => widget.tags.first);
-    return _selectedTag!;
+    Tag target = _selectedTag ?? widget.tags.firstWhere((t) => t.name == "General", orElse: () => widget.tags.first);
+    return widget.tags.firstWhere((t) => t.name == target.name, orElse: () => widget.tags.firstWhere((t) => t.name == "General", orElse: () => widget.tags.first));
   }
 
   int _calculateStreak() {
@@ -73,13 +73,18 @@ class _TimerViewState extends State<TimerView> with WidgetsBindingObserver {
     return widget.history.any((r) => "${r.date.year}-${r.date.month}-${r.date.day}" == todayStr);
   }
 
-  @override void didChangeAppLifecycleState(AppLifecycleState state) { if (state == AppLifecycleState.resumed) _loadDefaultDuration(); }
+  @override void didChangeAppLifecycleState(AppLifecycleState state) { if (state == AppLifecycleState.resumed) _loadSavedDuration(); }
 
-  Future<void> _loadDefaultDuration() async {
+  Future<void> _loadSavedDuration() async {
     if (isRunning) return;
     final prefs = await SharedPreferences.getInstance();
-    int defaultMins = prefs.getInt('setting_default_time') ?? 25;
-    if (secondsRemaining == initialTime) setState(() { initialTime = defaultMins * 60; secondsRemaining = initialTime; });
+    int lastMins = prefs.getInt('timer_last_duration') ?? 25;
+    if (secondsRemaining == initialTime) {
+      setState(() {
+        initialTime = lastMins * 60;
+        secondsRemaining = initialTime;
+      });
+    }
   }
 
   @override void dispose() { timer?.cancel(); subscription?.cancel(); WidgetsBinding.instance.removeObserver(this); super.dispose(); }
@@ -123,114 +128,118 @@ class _TimerViewState extends State<TimerView> with WidgetsBindingObserver {
     showDialog(context: context, builder: (ctx) => AlertDialog(backgroundColor: theme.surface, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), title: Icon(Icons.check_circle, color: theme.primary, size: 50), content: Text("${activeTag.name} session completed!", textAlign: TextAlign.center, style: TextStyle(color: theme.textPrimary)), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text("GREAT", style: TextStyle(color: theme.primary)))]));
   }
 
-  void resetTimer() async {
+  void resetTimer() {
     timer?.cancel();
     NotificationService.cancelTimerNotification();
-    final prefs = await SharedPreferences.getInstance();
-    int defaultMins = prefs.getInt('setting_default_time') ?? 25;
-    setState(() { isRunning = false; initialTime = defaultMins * 60; secondsRemaining = initialTime; });
+    setState(() { isRunning = false; secondsRemaining = initialTime; });
   }
 
-  void setDuration(int minutes) {
+  void setDuration(int minutes) async {
     stopTimer();
     NotificationService.cancelTimerNotification();
     setState(() { initialTime = minutes * 60; secondsRemaining = initialTime; });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('timer_last_duration', minutes);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = currentTheme.value;
-    int streak = _calculateStreak();
-    bool todayActive = _isTodayActive();
-    
-    List<BoxShadow> cardShadow = theme.brightness == Brightness.light 
-      ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))]
-      : [];
+    return ValueListenableBuilder<AppTheme>(
+      valueListenable: currentTheme,
+      builder: (context, theme, child) {
+        int streak = _calculateStreak();
+        bool todayActive = _isTodayActive();
+        
+        List<BoxShadow> cardShadow = theme.brightness == Brightness.light 
+          ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))]
+          : [];
 
-    double progressValue = 1 - (secondsRemaining / initialTime);
+        double progressValue = 1 - (secondsRemaining / initialTime);
 
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: todayActive ? Colors.orange.withOpacity(0.1) : theme.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: todayActive ? Colors.orange : theme.textSecondary.withOpacity(0.3), width: 1),
-                  boxShadow: cardShadow,
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: todayActive ? Colors.orange.withOpacity(0.1) : theme.surface,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: todayActive ? Colors.orange : theme.textSecondary.withOpacity(0.3), width: 1),
+                      boxShadow: cardShadow,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.local_fire_department, color: todayActive ? Colors.orange : theme.textSecondary, size: 20),
+                        const SizedBox(width: 6),
+                        Text("$streak", style: TextStyle(color: todayActive ? Colors.orange : theme.textSecondary, fontWeight: FontWeight.bold, fontSize: 16)),
+                      ],
+                    ),
+                  ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.local_fire_department, color: todayActive ? Colors.orange : theme.textSecondary, size: 20),
-                    const SizedBox(width: 6),
-                    Text("$streak", style: TextStyle(color: todayActive ? Colors.orange : theme.textSecondary, fontWeight: FontWeight.bold, fontSize: 16)),
-                  ],
+
+                const SizedBox(height: 10),
+                
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  decoration: BoxDecoration(color: theme.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: activeTag.color, width: 2), boxShadow: cardShadow),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<Tag>(
+                      value: activeTag, dropdownColor: theme.surface, icon: Icon(Icons.arrow_drop_down, color: theme.textSecondary), style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.w500),
+                      onChanged: isRunning ? null : (Tag? newValue) { setState(() => _selectedTag = newValue!); },
+                      items: widget.tags.map<DropdownMenuItem<Tag>>((Tag value) { return DropdownMenuItem<Tag>(value: value, child: Row(children: [CircleAvatar(backgroundColor: value.color, radius: 6), const SizedBox(width: 10), Text(value.name)])); }).toList(),
+                    ),
+                  ),
                 ),
-              ),
+                const Spacer(),
+                
+                Stack(alignment: Alignment.center, children: [
+                  SizedBox(
+                    width: 280, 
+                    height: 280, 
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween<double>(begin: progressValue, end: progressValue),
+                      duration: Duration(milliseconds: isRunning ? 1000 : 300), 
+                      curve: Curves.linear,
+                      builder: (context, value, _) {
+                        return CircularProgressIndicator(
+                          value: value, strokeWidth: 12, 
+                          backgroundColor: activeTag.color.withOpacity(0.15), 
+                          valueColor: AlwaysStoppedAnimation<Color>(activeTag.color),
+                        );
+                      }
+                    )
+                  ), 
+                  GestureDetector(
+                    onTap: () => _showDurationPicker(context),
+                    child: Container(
+                      width: 240, height: 240, 
+                      decoration: BoxDecoration(color: theme.surface, shape: BoxShape.circle, boxShadow: [BoxShadow(color: theme.brightness == Brightness.light ? Colors.black.withOpacity(0.08) : Colors.black.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))]), 
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center, 
+                        children: [
+                          Text('${(secondsRemaining ~/ 60).toString().padLeft(2, '0')}:${(secondsRemaining % 60).toString().padLeft(2, '0')}', style: TextStyle(fontSize: 70, fontWeight: FontWeight.w800, color: theme.textPrimary, letterSpacing: -2)), 
+                          if (!isRunning) Text("Tap to Adjust", style: TextStyle(color: theme.textSecondary, fontSize: 12, fontWeight: FontWeight.w500))
+                        ]
+                      )
+                    ),
+                  ),
+                ]),
+
+                const Spacer(),
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [_buildControlButton(icon: isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded, label: isRunning ? "PAUSE" : "START", color: activeTag.color, textColor: Colors.white, onTap: toggleTimer), const SizedBox(width: 20), _buildControlButton(icon: Icons.refresh_rounded, label: "RESET", color: theme.surface, textColor: theme.textPrimary, onTap: resetTimer)]),
+                const SizedBox(height: 40),
+                Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: theme.surface, borderRadius: BorderRadius.circular(20), boxShadow: cardShadow), child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [_buildQuickSelect("Focus", 25), _buildQuickSelect("Short Break", 5), _buildQuickSelect("Long Break", 15)])),
+                const SizedBox(height: 20),
+              ],
             ),
-
-            const SizedBox(height: 10),
-            
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              decoration: BoxDecoration(color: theme.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: activeTag.color, width: 2), boxShadow: cardShadow),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<Tag>(
-                  value: activeTag, dropdownColor: theme.surface, icon: Icon(Icons.arrow_drop_down, color: theme.textSecondary), style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.w500),
-                  onChanged: isRunning ? null : (Tag? newValue) { setState(() => _selectedTag = newValue!); },
-                  items: widget.tags.map<DropdownMenuItem<Tag>>((Tag value) { return DropdownMenuItem<Tag>(value: value, child: Row(children: [CircleAvatar(backgroundColor: value.color, radius: 6), const SizedBox(width: 10), Text(value.name)])); }).toList(),
-                ),
-              ),
-            ),
-            const Spacer(),
-            
-            Stack(alignment: Alignment.center, children: [
-              SizedBox(
-                width: 280, 
-                height: 280, 
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween<double>(begin: progressValue, end: progressValue),
-                  duration: Duration(milliseconds: isRunning ? 1000 : 300), 
-                  curve: Curves.linear,
-                  builder: (context, value, _) {
-                    return CircularProgressIndicator(
-                      value: value, strokeWidth: 12, 
-                      backgroundColor: activeTag.color.withOpacity(0.15), 
-                      valueColor: AlwaysStoppedAnimation<Color>(activeTag.color),
-                    );
-                  }
-                )
-              ), 
-              GestureDetector(
-                onTap: () => _showDurationPicker(context),
-                child: Container(
-                  width: 240, height: 240, 
-                  decoration: BoxDecoration(color: theme.surface, shape: BoxShape.circle, boxShadow: [BoxShadow(color: theme.brightness == Brightness.light ? Colors.black.withOpacity(0.08) : Colors.black.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))]), 
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center, 
-                    children: [
-                      Text('${(secondsRemaining ~/ 60).toString().padLeft(2, '0')}:${(secondsRemaining % 60).toString().padLeft(2, '0')}', style: TextStyle(fontSize: 70, fontWeight: FontWeight.w800, color: theme.textPrimary, letterSpacing: -2)), 
-                      if (!isRunning) Text("Tap to Adjust", style: TextStyle(color: theme.textSecondary, fontSize: 12, fontWeight: FontWeight.w500))
-                    ]
-                  )
-                ),
-              ),
-            ]),
-
-            const Spacer(),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [_buildControlButton(icon: isRunning ? Icons.pause_rounded : Icons.play_arrow_rounded, label: isRunning ? "PAUSE" : "START", color: activeTag.color, textColor: Colors.white, onTap: toggleTimer), const SizedBox(width: 20), _buildControlButton(icon: Icons.refresh_rounded, label: "RESET", color: theme.surface, textColor: theme.textPrimary, onTap: resetTimer)]),
-            const SizedBox(height: 40),
-            Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: theme.surface, borderRadius: BorderRadius.circular(20), boxShadow: cardShadow), child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [_buildQuickSelect("Focus", 25), _buildQuickSelect("Short Break", 5), _buildQuickSelect("Long Break", 15)])),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 

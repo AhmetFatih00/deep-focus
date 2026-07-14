@@ -16,6 +16,42 @@ class _StatsViewState extends State<StatsView> {
   StatsTimeRange _selectedRange = StatsTimeRange.day;
   DateTime _focusedDate = DateTime.now();
   int _touchedIndex = -1;
+  late PageController _pageController;
+  final int _initialPage = 10000;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: _initialPage);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  DateTime _getDateForPage(int page) {
+    int offset = page - _initialPage;
+    final now = DateTime.now();
+    switch (_selectedRange) {
+      case StatsTimeRange.day:
+        return now.add(Duration(days: offset));
+      case StatsTimeRange.week:
+        return now.add(Duration(days: offset * 7));
+      case StatsTimeRange.month:
+        return DateTime(now.year, now.month + offset, 1);
+      case StatsTimeRange.year:
+        return DateTime(now.year + offset, 1, 1);
+    }
+  }
+
+  void _onPageChanged(int page) {
+    setState(() {
+      _focusedDate = _getDateForPage(page);
+      _touchedIndex = -1;
+    });
+  }
 
   String get _dateTitle {
     final now = DateTime.now();
@@ -55,18 +91,6 @@ class _StatsViewState extends State<StatsView> {
     }
   }
 
-  void _moveDate(int direction) {
-    setState(() {
-      switch (_selectedRange) {
-        case StatsTimeRange.day: _focusedDate = _focusedDate.add(Duration(days: direction)); break;
-        case StatsTimeRange.week: _focusedDate = _focusedDate.add(Duration(days: direction * 7)); break;
-        case StatsTimeRange.month: _focusedDate = DateTime(_focusedDate.year, _focusedDate.month + direction, 1); break;
-        case StatsTimeRange.year: _focusedDate = DateTime(_focusedDate.year + direction, 1, 1); break;
-      }
-      _touchedIndex = -1;
-    });
-  }
-
   bool _isSameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 
   String _formatDuration(int minutes) {
@@ -76,7 +100,7 @@ class _StatsViewState extends State<StatsView> {
     return "${m}m";
   }
 
-  Map<String, dynamic> _getChartData(Color defaultColor) {
+  Map<String, dynamic> _getChartData(Color defaultColor, DateTime focusedDate) {
     List<BarChartGroupData> groups = [];
     int itemCount = 0;
     switch (_selectedRange) {
@@ -93,19 +117,19 @@ class _StatsViewState extends State<StatsView> {
       List<PomodoroRecord> recordsForBar = [];
 
       if (_selectedRange == StatsTimeRange.day) {
-        dateForBar = _focusedDate.subtract(Duration(days: (itemCount - 1) - i));
+        dateForBar = focusedDate.subtract(Duration(days: (itemCount - 1) - i));
         recordsForBar = widget.history.where((r) => _isSameDay(r.date, dateForBar)).toList();
       } else if (_selectedRange == StatsTimeRange.week) {
-        final currentWeekStart = _focusedDate.subtract(Duration(days: _focusedDate.weekday - 1));
+        final currentWeekStart = focusedDate.subtract(Duration(days: focusedDate.weekday - 1));
         final weekStart = currentWeekStart.subtract(Duration(days: ((itemCount - 1) - i) * 7));
         final weekEnd = weekStart.add(const Duration(days: 6));
         dateForBar = weekStart;
         recordsForBar = widget.history.where((r) => r.date.isAfter(weekStart.subtract(const Duration(seconds: 1))) && r.date.isBefore(weekEnd.add(const Duration(seconds: 1)))).toList();
       } else if (_selectedRange == StatsTimeRange.month) {
-        dateForBar = DateTime(_focusedDate.year, i + 1, 1);
-        recordsForBar = widget.history.where((r) => r.date.year == _focusedDate.year && r.date.month == (i + 1)).toList();
+        dateForBar = DateTime(focusedDate.year, i + 1, 1);
+        recordsForBar = widget.history.where((r) => r.date.year == focusedDate.year && r.date.month == (i + 1)).toList();
       } else {
-        int year = _focusedDate.year - ((itemCount - 1) - i);
+        int year = focusedDate.year - ((itemCount - 1) - i);
         dateForBar = DateTime(year, 1, 1);
         recordsForBar = widget.history.where((r) => r.date.year == year).toList();
       }
@@ -236,7 +260,9 @@ class _StatsViewState extends State<StatsView> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = currentTheme.value;
+    return ValueListenableBuilder<AppTheme>(
+      valueListenable: currentTheme,
+      builder: (context, theme, child) {
     int totalAllTimeMinutes = widget.history.fold(0, (sum, item) => sum + item.durationInMinutes);
 
     List<PomodoroRecord> filteredList = widget.history.where((r) {
@@ -256,14 +282,11 @@ class _StatsViewState extends State<StatsView> {
       totalDurationInView += r.durationInMinutes;
     }
 
-    final chartData = _getChartData(theme.primary);
-    final List<BarChartGroupData> barGroups = chartData['groups'];
-    final double calculatedMaxY = (chartData['maxY'] as double);
-    final double effectiveMaxY = calculatedMaxY == 0 ? 60 : calculatedMaxY * 1.1; 
-
     List<BoxShadow> cardShadow = theme.brightness == Brightness.light 
       ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]
       : [];
+
+    int selectedIndex = StatsTimeRange.values.indexOf(_selectedRange);
 
     return SafeArea(
       child: Padding(
@@ -271,61 +294,230 @@ class _StatsViewState extends State<StatsView> {
         child: Column(
           children: [
             _buildRankCard(theme, totalAllTimeMinutes),
+            
+            // Modernized Sliding Tab Selector
             Container(
-              padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: theme.surface, borderRadius: BorderRadius.circular(12), boxShadow: cardShadow),
-              child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: StatsTimeRange.values.map((range) {
-                  bool isSelected = _selectedRange == range;
-                  return Expanded(child: GestureDetector(onTap: () => setState(() { _selectedRange = range; _focusedDate = DateTime.now(); _touchedIndex = -1; }), child: Container(padding: const EdgeInsets.symmetric(vertical: 8), decoration: BoxDecoration(color: isSelected ? theme.primary : Colors.transparent, borderRadius: BorderRadius.circular(8)), child: Text(range.name.toUpperCase(), textAlign: TextAlign.center, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: isSelected ? Colors.white : theme.textSecondary)))));
-                }).toList()),
+              height: 46,
+              decoration: BoxDecoration(
+                color: theme.surface,
+                borderRadius: BorderRadius.circular(23),
+                boxShadow: cardShadow,
+                border: Border.all(color: theme.textSecondary.withOpacity(0.1)),
+              ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  double width = constraints.maxWidth / 4;
+                  return Stack(
+                    children: [
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                        left: selectedIndex * width,
+                        top: 2,
+                        bottom: 2,
+                        width: width,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [theme.primary, theme.primary.withOpacity(0.85)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(21),
+                            boxShadow: [
+                              BoxShadow(
+                                color: theme.primary.withOpacity(0.3),
+                                blurRadius: 6,
+                                offset: const Offset(0, 3),
+                              )
+                            ]
+                          ),
+                        ),
+                      ),
+                      Row(
+                        children: StatsTimeRange.values.map((range) {
+                          bool isSelected = _selectedRange == range;
+                          return Expanded(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                setState(() {
+                                  _selectedRange = range;
+                                  _focusedDate = DateTime.now();
+                                  _touchedIndex = -1;
+                                  _pageController.jumpToPage(_initialPage);
+                                });
+                              },
+                              child: Center(
+                                child: AnimatedDefaultTextStyle(
+                                  duration: const Duration(milliseconds: 200),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: isSelected ? Colors.white : theme.textSecondary,
+                                    letterSpacing: 1.1,
+                                  ),
+                                  child: Text(range.name.toUpperCase()),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  );
+                }
+              ),
             ),
             const SizedBox(height: 20),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [IconButton(icon: const Icon(Icons.arrow_back_ios, size: 18), color: theme.textSecondary, onPressed: () => _moveDate(-1)), Column(children: [Text(_dateTitle, style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)), Text("In View: ${_formatDuration(totalDurationInView)}", style: TextStyle(color: theme.primary, fontSize: 12, fontWeight: FontWeight.bold))]), IconButton(icon: const Icon(Icons.arrow_forward_ios, size: 18), color: theme.textSecondary, onPressed: () => _moveDate(1))]),
-            const SizedBox(height: 20),
+            
+            // Modernized Header without arrow buttons
+            Column(
+              children: [
+                Text(
+                  _dateTitle, 
+                  style: TextStyle(color: theme.textPrimary, fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -0.5)
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "In View: ${_formatDuration(totalDurationInView)}", 
+                  style: TextStyle(color: theme.primary, fontSize: 13, fontWeight: FontWeight.bold)
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            
+            // Horizontal Swipable Chart View
             SizedBox(
               height: 200, 
-              child: BarChart(
-                BarChartData(
-                  alignment: BarChartAlignment.spaceAround, 
-                  maxY: effectiveMaxY, 
-                  barTouchData: BarTouchData(
-                    enabled: true, 
-                    touchCallback: (FlTouchEvent event, barTouchResponse) { 
-                      setState(() {
-                        if (!event.isInterestedForInteractions || barTouchResponse == null || barTouchResponse.spot == null) {
-                          _touchedIndex = -1; 
-                          return;
-                        }
-                        _touchedIndex = barTouchResponse.spot!.touchedBarGroupIndex;
-                      });
-                    }, 
-                    touchTooltipData: BarTouchTooltipData(getTooltipColor: (group) => theme.primary, getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem('${rod.toY.round()} min', const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))
-                  ), 
-                  titlesData: FlTitlesData(
-                    show: true, 
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), 
-                    leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), 
-                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), 
-                    bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (double value, TitleMeta meta) { 
-                      String text = ""; 
-                      if (_selectedRange == StatsTimeRange.day) { DateTime d = _focusedDate.subtract(Duration(days: (6 - value.toInt()))); text = "${d.day}"; } 
-                      else if (_selectedRange == StatsTimeRange.month) { text = "${value.toInt() + 1}"; } 
-                      else if (_selectedRange == StatsTimeRange.year) { text = "${_focusedDate.year - (4 - value.toInt())}"; } 
-                      return SideTitleWidget(meta: meta, space: 4, child: Text(text, style: TextStyle(color: value.toInt() == _touchedIndex ? theme.primary : theme.textSecondary, fontSize: 10))); 
-                    }))
-                  ), 
-                  gridData: FlGridData(show: false), 
-                  borderData: FlBorderData(show: false), 
-                  barGroups: barGroups 
-                )
-              )
+              child: PageView.builder(
+                controller: _pageController,
+                onPageChanged: _onPageChanged,
+                itemBuilder: (context, pageIndex) {
+                  DateTime pageDate = _getDateForPage(pageIndex);
+                  final chartData = _getChartData(theme.primary, pageDate);
+                  final List<BarChartGroupData> barGroups = chartData['groups'];
+                  final double calculatedMaxY = (chartData['maxY'] as double);
+                  final double effectiveMaxY = calculatedMaxY == 0 ? 60 : calculatedMaxY * 1.1; 
+
+                  return BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceAround, 
+                      maxY: effectiveMaxY, 
+                      barTouchData: BarTouchData(
+                        enabled: true, 
+                        touchCallback: (FlTouchEvent event, barTouchResponse) { 
+                          if (event is FlTapUpEvent) {
+                            setState(() {
+                              if (barTouchResponse == null || barTouchResponse.spot == null) {
+                                _touchedIndex = -1;
+                              } else {
+                                _touchedIndex = barTouchResponse.spot!.touchedBarGroupIndex;
+                              }
+                            });
+                          }
+                        }, 
+                        touchTooltipData: BarTouchTooltipData(
+                          getTooltipColor: (group) => theme.primary, 
+                          getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
+                            '${rod.toY.round()} min', 
+                            const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
+                          )
+                        )
+                      ), 
+                      titlesData: FlTitlesData(
+                        show: true, 
+                        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), 
+                        leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), 
+                        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), 
+                        bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (double value, TitleMeta meta) { 
+                          String text = ""; 
+                          if (_selectedRange == StatsTimeRange.day) { 
+                            DateTime d = pageDate.subtract(Duration(days: (7 - 1) - value.toInt())); 
+                            text = "${d.day}"; 
+                          } 
+                          else if (_selectedRange == StatsTimeRange.month) { 
+                            text = "${value.toInt() + 1}"; 
+                          } 
+                          else if (_selectedRange == StatsTimeRange.year) { 
+                            text = "${pageDate.year - (5 - 1 - value.toInt())}"; 
+                          } 
+                          return SideTitleWidget(
+                            meta: meta, 
+                            space: 4, 
+                            child: Text(
+                              text, 
+                              style: TextStyle(
+                                color: value.toInt() == _touchedIndex ? theme.primary : theme.textSecondary, 
+                                fontSize: 10
+                              )
+                            )
+                          ); 
+                        }))
+                      ), 
+                      gridData: FlGridData(show: false), 
+                      borderData: FlBorderData(show: false), 
+                      barGroups: barGroups 
+                    )
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            
+            // Swipe indicator hint
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.swipe_left_alt_rounded, size: 14, color: theme.textSecondary.withOpacity(0.5)),
+                const SizedBox(width: 4),
+                Text(
+                  "Swipe chart left/right to navigate", 
+                  style: TextStyle(fontSize: 11, color: theme.textSecondary.withOpacity(0.5), fontWeight: FontWeight.w500)
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.swipe_right_alt_rounded, size: 14, color: theme.textSecondary.withOpacity(0.5)),
+              ],
             ),
             const SizedBox(height: 20),
+            
             Text("DETAILS", style: TextStyle(color: theme.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
-            Expanded(child: detailStats.isEmpty ? Center(child: Text("No activity recorded.", style: TextStyle(color: theme.textSecondary))) : ListView(children: detailStats.entries.map((entry) { Color tagColor = theme.textSecondary; try { tagColor = widget.tags.firstWhere((t) => t.name == entry.key).color; } catch (_) {} return Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: theme.surface, borderRadius: BorderRadius.circular(12), border: Border(left: BorderSide(color: tagColor, width: 4)), boxShadow: cardShadow), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(entry.key, style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.w500)), Text("${entry.value} min", style: TextStyle(color: tagColor, fontWeight: FontWeight.bold))])); }).toList())),
+            Expanded(
+              child: detailStats.isEmpty 
+                ? Center(child: Text("No activity recorded.", style: TextStyle(color: theme.textSecondary))) 
+                : ListView(
+                    children: detailStats.entries.map((entry) { 
+                      Color tagColor = theme.textSecondary; 
+                      try { 
+                        tagColor = widget.tags.firstWhere((t) => t.name == entry.key).color; 
+                      } catch (_) {} 
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8), 
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), 
+                        decoration: BoxDecoration(
+                          color: theme.surface, 
+                          borderRadius: BorderRadius.circular(12), 
+                          border: Border(left: BorderSide(color: tagColor, width: 4)), 
+                          boxShadow: cardShadow
+                        ), 
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween, 
+                          children: [
+                            Text(entry.key, style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.w500)), 
+                            Text("${entry.value} min", style: TextStyle(color: tagColor, fontWeight: FontWeight.bold))
+                          ]
+                        )
+                      ); 
+                    }).toList()
+                  )
+            ),
           ],
         ),
       ),
+    );
+      },
     );
   }
 }

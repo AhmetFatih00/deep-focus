@@ -11,7 +11,9 @@ class TagsManageView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = currentTheme.value;
+    return ValueListenableBuilder<AppTheme>(
+      valueListenable: currentTheme,
+      builder: (context, theme, child) {
     List<BoxShadow> cardShadow = theme.brightness == Brightness.light ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))] : [];
     
     return SafeArea(
@@ -49,6 +51,8 @@ class TagsManageView extends StatelessWidget {
           ),
         ),
       ),
+    );
+      },
     );
   }
 

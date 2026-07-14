@@ -125,7 +125,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _addTag(Tag newTag) {
-    if (tags.any((t) => t.name == "General")) return;
+    if (tags.any((t) => t.name.toLowerCase() == newTag.name.toLowerCase())) return;
     setState(() => tags.add(newTag));
     _saveTags();
   }
@@ -166,40 +166,51 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = currentTheme.value;
-    if (_isLoading) return Scaffold(backgroundColor: theme.background, body: Center(child: CircularProgressIndicator(color: theme.primary)));
-    final safeTags = tags.isEmpty ? [Tag(name: "General", colorValue: theme.primary.value)] : tags;
-    
-    final List<Widget> pages = [
-      TimerView(onPomodoroComplete: _addPomodoro, tags: safeTags, history: history),
-      TasksView(tasks: dailyTasks, history: history, tags: safeTags, onAddTask: _addTask, onDeleteTask: _deleteTask), 
-      StatsView(history: history, tags: safeTags), 
-      TagsManageView(tags: safeTags, onAddTag: _addTag, onDeleteTag: _deleteTag, onEditTag: _editTag), 
-      SettingsView(onClearHistory: _clearAllHistory), 
-    ];
+    return ValueListenableBuilder<AppTheme>(
+      valueListenable: currentTheme,
+      builder: (context, theme, child) {
+        if (_isLoading) return Scaffold(backgroundColor: theme.background, body: Center(child: CircularProgressIndicator(color: theme.primary)));
+        final List<Tag> safeTags = tags.map((t) {
+          if (t.name.toLowerCase() == "general") {
+            return Tag(name: "General", colorValue: theme.primary.value);
+          }
+          return t;
+        }).toList();
+        if (!safeTags.any((t) => t.name == "General")) {
+          safeTags.insert(0, Tag(name: "General", colorValue: theme.primary.value));
+        }
+        
+        final List<Widget> pages = [
+          TimerView(onPomodoroComplete: _addPomodoro, tags: safeTags, history: history),
+          TasksView(tasks: dailyTasks, history: history, tags: safeTags, onAddTask: _addTask, onDeleteTask: _deleteTask), 
+          StatsView(history: history, tags: safeTags), 
+          TagsManageView(tags: safeTags, onAddTag: _addTag, onDeleteTag: _deleteTag, onEditTag: _editTag), 
+          SettingsView(onClearHistory: _clearAllHistory), 
+        ];
 
-    return Scaffold(
-      backgroundColor: theme.background,
-      body: IndexedStack(index: _selectedIndex, children: pages),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: theme.textSecondary.withOpacity(0.1), width: 1)),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))]
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _selectedIndex, 
-          onTap: (index) => setState(() => _selectedIndex = index), 
-          selectedFontSize: 12,
-          unselectedFontSize: 10,
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.timer_rounded), label: 'Focus'), 
-            BottomNavigationBarItem(icon: Icon(Icons.task_alt_rounded), label: 'Tasks'), 
-            BottomNavigationBarItem(icon: Icon(Icons.pie_chart_rounded), label: 'Stats'), 
-            BottomNavigationBarItem(icon: Icon(Icons.label_rounded), label: 'Tags'), 
-            BottomNavigationBarItem(icon: Icon(Icons.settings_rounded), label: 'Settings')
-          ]
-        ),
-      ),
+        return Scaffold(
+          backgroundColor: theme.background,
+          body: IndexedStack(index: _selectedIndex, children: pages),
+          bottomNavigationBar: SafeArea(
+            child: BottomNavigationBar(
+              currentIndex: _selectedIndex, 
+              onTap: (index) => setState(() => _selectedIndex = index), 
+              showSelectedLabels: false,
+              showUnselectedLabels: false,
+              elevation: 0,
+              backgroundColor: Colors.transparent,
+              type: BottomNavigationBarType.fixed,
+              items: const [
+                BottomNavigationBarItem(icon: Icon(Icons.timer_rounded), label: 'Focus'), 
+                BottomNavigationBarItem(icon: Icon(Icons.task_alt_rounded), label: 'Tasks'), 
+                BottomNavigationBarItem(icon: Icon(Icons.pie_chart_rounded), label: 'Stats'), 
+                BottomNavigationBarItem(icon: Icon(Icons.label_rounded), label: 'Tags'), 
+                BottomNavigationBarItem(icon: Icon(Icons.settings_rounded), label: 'Settings')
+              ]
+            ),
+          ),
+        );
+      },
     );
   }
 }
